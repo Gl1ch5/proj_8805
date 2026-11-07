@@ -29,7 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK ${{ env.JAVA_VERSION }}
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -48,12 +48,12 @@ jobs:
           sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "platform-tools"
           sdkmanager --list_installed
 
-      - name: Set up Gradle ${{ env.GRADLE_VERSION }}
+      - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
           validate-wrappers: false
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          cache-read-only: false
           dependency-graph: disabled
 
       - name: Verify toolchain
