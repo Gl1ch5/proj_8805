@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Погода</title>
+<script>
+  // Буфер на случай, если нативный код пришлёт данные до готовности DOM.
+  window.__nativeQueue = [];
+  window.__onNativeData = function (raw) { window.__nativeQueue.push(raw); };
+</script>
+<style>
+  :root {
+    --bg: #0b1020;
+    --card: rgba(255, 255, 255, 0.06);
+    --card-strong: rgba(255, 255, 255, 0.10);
+    --line: rgba(255, 255, 255, 0.10);
+    --text: #eef2ff;
+    --muted: #9aa6c4;
+    --accent: #7aa2ff;
+    --warm: #ffd08a;
+    --cold: #8fd3ff;
+    --danger: #ff9b9b;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(120% 80% at 20% 0%, #1b2a55 0%, var(--bg) 55%) fixed;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    min-height: 100vh;
+    padding: calc(env(safe-area-inset-top, 0px) + 16px) 14px calc(env(safe-area-inset-bottom, 0px) + 28px);
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  h1 { font-size: 17px; font-weight: 700; margin: 0; letter-spacing: .02em; }
+  .subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .icon-btn {
+    flex: none; width: 42px; height: 42px; border-radius: 14px;
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .icon-btn:active { background: var(--card-strong); }
+  .icon-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .search { position: relative; margin-bottom: 14px; }
+  .search input {
+    width: 100%; height: 46px; padding: 0 44px 0 16px; border-radius: 14px;
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+    font-size: 15px; outline: none; font-family: inherit;
+  }
+  .search input::placeholder { color: var(--muted); }
+  .search input:focus { border-color: var(--accent); }
+  .search .clear {
+    position: absolute; right: 4px; top: 2px; width: 42px; height: 42px;
+    border: 0; background: transparent; color: var(--muted); font-size: 20px;
+    cursor: pointer; display: none;
+  }
+  .search .clear.on { display: block; }
+  .results {
+    background: #151d36; border: 1px solid var(--line); border-radius: 14px;
+    margin-top: 6px; overflow: hidden; display: none;
+    box-shadow: 0 12px 32px rgba(0,0,0,.35);
+  }
+  .results.on { display: block; }
+  .city {
+    width: 100%; text-align: left; padding: 12px 14px; border: 0;
+    border-bottom: 1px solid var(--line); background: transparent;
+    color: var(--text); font-size: 14px; font-family: inherit; cursor: pointer;
+  }
+  .city:last-child { border-bottom: 0; }
+  .city:active { background: var(--card-strong); }
+  .city small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .status { min-height: 18px; color: var(--muted); font-size: 12px; margin: 0 2px 10px; }
+  .status.err { color: var(--danger); }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px; margin-bottom: 14px;
+  }
+  .current { display: flex; align-items: center; gap: 16px; }
+  .current .wicon { flex: none; width: 76px; height: 76px; color: var(--warm); }
+  .current .wicon svg { width: 100%; height: 100%; }
+  .temp { font-size: 52px; font-weight: 300; line-height: 1; letter-spacing: -.03em; }
+  .desc { color: var(--text); font-size: 15px; margin-top: 6px; }
+  .place { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 18px; }
+  .metric { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; }
+  .metric .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .metric .v { font-size: 17px; font-weight: 600; margin-top: 3px; }
+  .section-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 12px 2px; }
+  .hourly { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .hourly::-webkit-scrollbar { display: none; }
+  .hour {
+    flex: 0 0 64px; background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 6px; text-align: center;
+  }
+  .hour .t { color: var(--muted); font-size: 11px; }
+  .hour .wi { width: 30px; height: 30px; margin: 6px auto; color: var(--accent); }
+  .hour .wi svg { width: 100%; height: 100%; }
+  .hour .d { font-size: 15px; font-weight: 600; }
+  .hour .p { color: var(--cold); font-size: 10px; margin-top: 2px; }
+  .day { display: grid; grid-template-columns: 62px 34px 1fr auto auto; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--line); }
+  .day:last-child { border-bottom: 0; }
+  .day .n { font-size: 13px; color: var(--muted); }
+  .day .wi { width: 30px; height: 30px; color: var(--accent); }
+  .day .wi svg { width: 100%; height: 100%; }
+  .day .p { font-size: 12px; color: var(--cold); min-width: 38px; text-align: right; }
+  .day .lo { color: var(--muted); font-size: 14px; min-width: 34px; text-align: right; }
+  .day .hi { font-weight: 600; font-size: 15px; min-width: 34px; text-align: right; }
+  .bar { height: 4px; background: var(--card-strong); border-radius: 3px; position: relative; }
+  .bar i { position: absolute; height: 4px; border-radius: 3px; background: linear-gradient(90deg, var(--cold), var(--warm)); }
+  footer { color: var(--muted); font-size: 11px; text-align: center; margin-top: 18px; line-height: 1.6; }
+  footer a { color: var(--accent); text-decoration: none; }
+  .empty { color: var(--muted); font-size: 13px; text-align: center; padding: 12px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Погода</h1>
+      <div class="subtitle" id="subtitle">Прогноз на 7 дней</div>
+    </div>
+    <button class="icon-btn" id="locate" title="Моё местоположение" aria-label="Моё местоположение">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="8"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>
+    </button>
+    <button class="icon-btn" id="refresh" title="Обновить" aria-label="Обновить">
+      <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 6.3"/><path d="M20 4v7h-7"/></svg>
+    </button>
+  </header>
+
+  <div class="search">
+    <input id="q" type="search" placeholder="Поиск города" autocomplete="off" enterkeyhint="search">
+    <button class="clear" id="clearq" aria-label="Очистить">&times;</button>
+    <div class="results" id="results"></div>
+  </div>
+
+  <p class="status" id="status">Загрузка...</p>
+  <div id="content"></div>
+
+  <footer>
+    Данные: <a href="https://open-meteo.com/">Open-Meteo</a> (CC BY 4.0).<br>
+    Прогноз обновляется при запуске и по кнопке обновления.
+  </footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var DEFAULT_PLACE = { name: 'Москва', country: 'Россия', lat: 55.7558, lon: 37.6173 };
+  var KEY = 'weather.place.v1';
+  var state = { place: null, data: null };
+  var searchTimer = null;
+  var nativeWaiters = [], nativePolling = false;
+
+  // addJavascriptInterface внедряется асинхронно: ждём готовности моста.
+  function withNative(cb) {
+    if (window.Native && typeof window.Native.requestForecast === 'function') { cb(); return; }
+    nativeWaiters.push(cb);
+    if (!nativePolling) { nativePolling = true; pollNative(0); }
+  }
+  function pollNative(n) {
+    if (window.Native && typeof window.Native.requestForecast === 'function') {
+      var list = nativeWaiters.splice(0);
+      nativePolling = false;
+      for (var i = 0; i < list.length; i++) list[i]();
+      return;
+    }
+    if (n < 40) {
+      setTimeout(function () { pollNative(n + 1); }, 50);
+    } else {
+      nativePolling = false;
+      nativeWaiters = [];
+      setStatus('Мост WebView недоступен', true);
+    }
+  }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var content = $('content'), statusEl = $('status'), results = $('results'), q = $('q');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function setStatus(text, isError) {
+    statusEl.textContent = text || '';
+    statusEl.className = 'status' + (isError ? ' err' : '');
+  }
+  function unit(v, suffix) { return (v == null || isNaN(v)) ? '--' : Math.round(v) + suffix; }
+  function savePlace(p) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (e) {} }
+  function loadPlace() {
+    try {
+      var raw = localStorage.getItem(KEY);
+      if (raw) {
+        var p = JSON.parse(raw);
+        if (p && typeof p.lat === 'number' && typeof p.lon === 'number') return p;
+      }
+    } catch (e) {}
+    return DEFAULT_PLACE;
+  }
+
+  // WMO Weather interpretation codes.
+  function wmo(code, isDay) {
+    var c = Number(code);
+    if (c === 0) return { t: 'Ясно', i: isDay ? 'sun' : 'moon' };
+    if (c === 1) return { t: 'Малооблачно', i: isDay ? 'partly' : 'partly-night' };
+    if (c === 2) return { t: 'Переменная облачность', i: 'cloud' };
+    if (c === 3) return { t: 'Пасмурно', i: 'overcast' };
+    if (c === 45 || c === 48) return { t: 'Туман', i: 'fog' };
+    if (c >= 51 && c <= 57) return { t: 'Морось', i: 'drizzle' };
+    if (c >= 61 && c <= 67) return { t: 'Дождь', i: 'rain' };
+    if (c >= 71 && c <= 77) return { t: 'Снег', i: 'snow' };
+    if (c >= 80 && c <= 82) return { t: 'Ливень', i: 'rain' };
+    if (c === 85 || c === 86) return { t: 'Снегопад', i: 'snow' };
+    if (c >= 95) return { t: 'Гроза', i: 'storm' };
+    return { t: 'Неизвестно', i: 'cloud' };
+  }
+
+  var SHAPES = {
+    sun: '<circle cx="32" cy="32" r="12"/><path d="M32 6v8M32 50v8M6 32h8M50 32h8M13.6 13.6l5.7 5.7M44.7 44.7l5.7 5.7M50.4 13.6l-5.7 5.7M19.3 44.7l-5.7 5.7"/>',
+    moon: '<path d="M44 38A18 18 0 0 1 26 20a18 18 0 1 0 18 18z"/><path d="M46 12v6M43 15h6"/>',
+    cloud: '<path d="M18 44h28a11 11 0 0 0 1-22 16 16 0 0 0-30-4 12 12 0 0 0 1 26z"/>',
+    partly: '<circle cx="24" cy="22" r="9"/><path d="M24 5v5M7 22h5M10.8 10.8l3.5 3.5M37.2 10.8l-3.5 3.5"/><path d="M22 48h26a10 10 0 0 0 0-20 14 14 0 0 0-26-3 11 11 0 0 0 0 23z"/>',
+    'partly-night': '<path d="M34 26A13 13 0 0 1 20 12a13 13 0 1 0 14 14z"/><path d="M22 48h26a10 10 0 0 0 0-20 14 14 0 0 0-26-3 11 11 0 0 0 0 23z"/>',
+    overcast: '<path d="M14 40h30a10 10 0 0 0 0-20 15 15 0 0 0-28-3 11 11 0 0 0-2 23z"/><path d="M8 50h44"/>',
+    fog: '<path d="M16 34h32a10 10 0 0 0 0-20 15 15 0 0 0-29-3 11 11 0 0 0-3 23z"/><path d="M8 42h48M12 49h40M16 56h32"/>',
+    drizzle: '<path d="M16 36h32a10 10 0 0 0 0-20 15 15 0 0 0-29-3 11 11 0 0 0-3 23z"/><path d="M22 44l-3 7M34 44l-3 7M46 44l-3 7"/>',
+    rain: '<path d="M16 36h32a10 10 0 0 0 0-20 15 15 0 0 0-29-3 11 11 0 0 0-3 23z"/><path d="M20 42l-5 13M32 42l-5 13M44 42l-5 13"/>',
+    snow: '<path d="M16 36h32a10 10 0 0 0 0-20 15 15 0 0 0-29-3 11 11 0 0 0-3 23z"/><path d="M20 45v10M15 50h10M32 45v10M27 50h10M44 45v10M39 50h10"/>',
+    storm: '<path d="M16 36h32a10 10 0 0 0 0-20 15 15 0 0 0-29-3 11 11 0 0 0-3 23z"/><path d="M34 40l-9 13h8l-4 10 13-16h-8z"/>'
+  };
+  function icon(kind) {
+    return '<svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" ' +
+      'stroke-linecap="round" stroke-linejoin="round">' + (SHAPES[kind] || SHAPES.cloud) + '</svg>';
+  }
+  function windDir(deg) {
+    if (deg == null || isNaN(deg)) return '';
+    var names = ['С', 'СВ', 'В', 'ЮВ', 'Ю', 'ЮЗ', 'З', 'СЗ'];
+    return names[Math.round(deg / 45) % 8];
+  }
+  function hhmm(iso) {
+    if (!iso || iso.length < 16) return '--:--';
+    return iso.slice(11, 16);
+  }
+  function dayName(iso, index) {
+    if (index === 0) return 'Сегодня';
+    if (index === 1) return 'Завтра';
+    var days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    var d = new Date(iso + 'T12:00:00');
+    return isNaN(d.getTime()) ? iso.slice(5) : days[d.getDay()] + ' ' + iso.slice(8, 10);
+  }
+
+  function render() {
+    var d = state.data, p = state.place;
+    if (!d || !d.current) { content.innerHTML = ''; return; }
+    var cur = d.current, daily = d.daily || {}, hourly = d.hourly || {};
+    var isDay = cur.is_day !== 0;
+    var w = wmo(cur.weather_code, isDay);
+    var placeText = esc(p.name || 'Точка') + (p.country ? ', ' + esc(p.country) : '');
+
+    var html = '<div class="card">'
+      + '<div class="current">'
+      + '<div class="wicon">' + icon(w.i) + '</div>'
+      + '<div><div class="temp">' + unit(cur.temperature_2m, '°') + '</div>'
+      + '<div class="desc">' + esc(w.t) + '</div>'
+      + '<div class="place">' + placeText + '</div></div></div>'
+      + '<div class="metrics">'
+      + metric('Ощущается', unit(cur.apparent_temperature, '°'))
+      + metric('Влажность', unit(cur.relative_humidity_2m, '%'))
+      + metric('Ветер', unit(cur.wind_speed_10m, ' км/ч') + (cur.wind_direction_10m != null ? ' ' + windDir(cur.wind_direction_10m) : ''))
+      + metric('Осадки', unit(cur.precipitation, ' мм'))
+      + '</div></div>';
+
+    // Почасовой прогноз от текущего часа.
+    var times = hourly.time || [], hStart = 0;
+    var curHour = (cur.time || '').slice(0, 13);
+    for (var i = 0; i < times.length; i++) {
+      if (times[i].slice(0, 13) >= curHour) { hStart = i; break; }
+    }
+    var hEnd = Math.min(times.length, hStart + 12);
+    if (hEnd > hStart) {
+      var hours = '';
+      for (var h = hStart; h < hEnd; h++) {
+        var hw = wmo(hourly.weather_code && hourly.weather_code[h], true);
+        var prob = hourly.precipitation_probability && hourly.precipitation_probability[h];
+        hours += '<div class="hour">'
+          + '<div class="t">' + esc(hhmm(times[h])) + '</div>'
+          + '<div class="wi">' + icon(hw.i) + '</div>'
+          + '<div class="d">' + unit(hourly.temperature_2m && hourly.temperature_2m[h], '°') + '</div>'
+          + '<div class="p">' + (prob != null ? Math.round(prob) + '%' : '') + '</div>'
+          + '</div>';
+      }
+      html += '<p class="section-title">Ближайшие часы</p><div class="card"><div class="hourly">' + hours + '</div></div>';
+    }
+
+    // Прогноз на 7 дней.
+    var dTimes = daily.time || [], mins = daily.temperature_2m_min || [], maxs = daily.temperature_2m_max || [], days = '';
+    if (dTimes.length && mins.length && maxs.length) {
+      var valid = mins.concat(maxs).filter(function (x) { return typeof x === 'number' && isFinite(x); });
+      var allMin = valid.length ? Math.min.apply(null, valid) : 0;
+      var allMax = valid.length ? Math.max.apply(null, valid) : 1;
+      var span = Math.max(1, allMax - allMin);
+      for (var j = 0; j < dTimes.length; j++) {
+        var dw = wmo(daily.weather_code && daily.weather_code[j], true);
+        var pmax = daily.precipitation_probability_max && daily.precipitation_probability_max[j];
+        var lo = typeof mins[j] === 'number' ? mins[j] : allMin;
+        var hi = typeof maxs[j] === 'number' ? maxs[j] : allMax;
+        var left = Math.max(0, Math.min(100, ((lo - allMin) / span) * 100));
+        var width = Math.max(6, ((hi - lo) / span) * 100);
+        days += '<div class="day">'
+          + '<div class="n">' + esc(dayName(dTimes[j], j)) + '</div>'
+          + '<div class="wi">' + icon(dw.i) + '</div>'
+          + '<div class="bar"><i style="left:' + left.toFixed(1) + '%;width:' + Math.max(6, width).toFixed(1) + '%"></i></div>'
+          + '<div class="p">' + (pmax != null ? Math.round(pmax) + '%' : '') + '</div>'
+          + '<div><span class="lo">' + unit(lo, '°') + '</span> <span class="hi">' + unit(hi, '°') + '</span></div>'
+          + '</div>';
+      }
+      html += '<p class="section-title">7 дней</p><div class="card">' + days + '</div>';
+    }
+
+    var sun = daily.sunrise && daily.sunset;
+    if (sun) {
+      html += '<div class="card"><p class="section-title">Солнце</p><div class="metrics">'
+        + metric('Восход', esc(hhmm(daily.sunrise[0])))
+        + metric('Закат', esc(hhmm(daily.sunset[0])))
+        + metric('Часовой пояс', esc(d.timezone || '--'))
+        + metric('Обновлено', esc(hhmm(cur.time)))
+        + '</div></div>';
+    }
+    content.innerHTML = html;
+    $('subtitle').textContent = w.t + ' · ' + (p.name || '');
+  }
+
+  function metric(k, v) {
+    return '<div class="metric"><div class="k">' + esc(k) + '</div><div class="v">' + v + '</div></div>';
+  }
+
+  function request() {
+    var p = state.place || DEFAULT_PLACE;
+    setStatus('Загрузка прогноза...');
+    withNative(function () { window.Native.requestForecast(p.lat, p.lon, p.name || '', p.country || ''); });
+  }
+
+  function showCities(list) {
+    if (!list || !list.length) {
+      results.innerHTML = '<div class="empty">Ничего не найдено</div>';
+      results.classList.add('on');
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i];
+      html += '<button class="city" data-i="' + i + '">' + esc(c.name)
+        + '<small>' + esc([c.admin1, c.country].filter(Boolean).join(', ')) + '</small></button>';
+    }
+    results.innerHTML = html;
+    results.classList.add('on');
+    var buttons = results.querySelectorAll('.city');
+    for (var b = 0; b < buttons.length; b++) {
+      buttons[b].addEventListener('click', function () {
+        var city = list[parseInt(this.getAttribute('data-i'), 10)];
+        if (!city) return;
+        state.place = {
+          name: city.name,
+          country: [city.admin1, city.country].filter(Boolean).join(', '),
+          lat: city.latitude, lon: city.longitude
+        };
+        savePlace(state.place);
+        q.value = '';
+        $('clearq').classList.remove('on');
+        results.classList.remove('on');
+        if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+        request();
+      });
+    }
+  }
+
+  function handle(msg) {
+    switch (msg.type) {
+      case 'forecast':
+        state.place = msg.place || state.place;
+        state.data = msg.data;
+        setStatus('');
+        render();
+        break;
+      case 'cities':
+        showCities((msg.data && msg.data.results) || []);
+        break;
+      case 'location':
+        state.place = { name: msg.name || 'Моё местоположение', country: '', lat: msg.lat, lon: msg.lon };
+        savePlace(state.place);
+        request();
+        break;
+      case 'permission':
+        if (msg.granted) {
+          setStatus('Определяем местоположение...');
+          withNative(function () { window.Native.locate(); });
+        } else {
+          setStatus('Разрешение не получено. Используйте поиск города.', true);
+        }
+        break;
+      case 'need-permission':
+        setStatus('Запрос разрешения на геолокацию...');
+        break;
+      case 'error':
+        setStatus(msg.message || 'Ошибка', true);
+        break;
+      default:
+        break;
+    }
+  }
+
+  window.__onNativeData = function (raw) {
+    var msg;
+    try { msg = JSON.parse(raw); } catch (e) { return; }
+    handle(msg);
+  };
+  var queued = window.__nativeQueue || [];
+  window.__nativeQueue = [];
+  for (var k = 0; k < queued.length; k++) window.__onNativeData(queued[k]);
+
+  $('refresh').addEventListener('click', request);
+  $('locate').addEventListener('click', function () {
+    setStatus('Определяем местоположение...');
+    withNative(function () { window.Native.locate(); });
+  });
+  $('clearq').addEventListener('click', function () {
+    q.value = ''; this.classList.remove('on'); results.classList.remove('on');
+  });
+  q.addEventListener('input', function () {
+    $('clearq').classList.toggle('on', q.value.length > 0);
+    clearTimeout(searchTimer);
+    var value = q.value.trim();
+    if (value.length < 2) { results.classList.remove('on'); return; }
+    searchTimer = setTimeout(function () {
+      withNative(function () { window.Native.searchCity(value); });
+    }, 350);
+  });
+  q.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      e.preventDefault();
+      clearTimeout(searchTimer);
+      var value = q.value.trim();
+      if (value.length >= 2) {
+        withNative(function () { window.Native.searchCity(value); });
+      }
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    }
+  });
+
+  state.place = loadPlace();
+  request();
+})();
+</script>
+</body>
+</html>
