@@ -3,6 +3,7 @@ name: Android build (WebView weather)
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
